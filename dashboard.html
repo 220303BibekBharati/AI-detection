@@ -334,6 +334,7 @@
   </div>
 
   <script>
+    const BACKEND_URL = 'http://127.0.0.1:5000';
     // Section navigation
     function showSection(section) {
       document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
@@ -390,7 +391,7 @@
       formData.append('file', file);
       showLoading('Uploading CSV...');
       try {
-        const response = await fetch('http://localhost:5000/upload', {
+        const response = await fetch(`${BACKEND_URL}/upload`, {
           method: 'POST',
           body: formData
         });
@@ -413,7 +414,7 @@
       if (!uploadedFilename) return;
       showLoading('Fetching CSV data...');
       try {
-        const response = await fetch(`http://localhost:5000/data?filename=${encodeURIComponent(uploadedFilename)}`);
+        const response = await fetch(`${BACKEND_URL}/data?filename=${encodeURIComponent(uploadedFilename)}`);
         const result = await response.json();
         if (response.ok && result.data) {
           csvData = result.data;
@@ -510,7 +511,7 @@
       }
       showLoading('Training ' + aiModelType + '...');
       try {
-        const response = await fetch('http://localhost:5000/train', {
+        const response = await fetch(`${BACKEND_URL}/train`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: uploadedFilename, model_type: aiModelType })
@@ -543,7 +544,7 @@
       showLoading('Detecting anomalies...');
       document.getElementById('anomalyChartLoading').classList.remove('hidden');
       try {
-        const response = await fetch('http://localhost:5000/predict', {
+        const response = await fetch(`${BACKEND_URL}/predict`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: uploadedFilename, model_type: aiModelType })
@@ -599,6 +600,24 @@
       document.getElementById('ai-model-precision').textContent = result.metrics && result.metrics.precision !== undefined ? result.metrics.precision.toFixed(2) : '-';
       document.getElementById('ai-model-recall').textContent = result.metrics && result.metrics.recall !== undefined ? result.metrics.recall.toFixed(2) : '-';
       document.getElementById('ai-model-status').textContent = 'Trained';
+    }
+    function renderDetectedAnomalies(data) {
+      const tbody = document.getElementById('detected-anomalies');
+      tbody.innerHTML = '';
+      if (!data || !data.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400">No anomalies detected</td></tr>';
+        return;
+      }
+      data.forEach(row => {
+        tbody.innerHTML += `<tr>
+          <td class="px-2 py-1">${row.log_id || '-'}</td>
+          <td class="px-2 py-1">${row.member_id || '-'}</td>
+          <td class="px-2 py-1">${row.transaction_type || '-'}</td>
+          <td class="px-2 py-1">${row.amount || '-'}</td>
+          <td class="px-2 py-1"><span class="text-red-500 font-bold">High</span></td>
+          <td class="px-2 py-1"><button class="text-blue-500">Details</button></td>
+        </tr>`;
+      });
     }
     const origRenderDetectedAnomalies = renderDetectedAnomalies;
     renderDetectedAnomalies = function(data) {
@@ -867,7 +886,7 @@
       }
       showShapLoading('Generating global SHAP explanations...');
       try {
-        const response = await fetch('http://localhost:5000/shap', {
+        const response = await fetch(`${BACKEND_URL}/shap`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: uploadedFilename, model_type: lastShapModelType })
@@ -990,7 +1009,7 @@
             showShapLoading('Generating local SHAP explanation...');
             try {
               const anomalyIdx = parseInt(row.getAttribute('data-anomaly-idx'));
-              const response = await fetch('http://localhost:5000/shap', {
+              const response = await fetch(`${BACKEND_URL}/shap`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename: uploadedFilename, model_type: lastShapModelType, index: anomalyIdx })
