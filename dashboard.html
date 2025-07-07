@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kathmandu Valley Cooperative - Anomaly Detection Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+  <!-- Header & Navigation -->
+  <header class="bg-white shadow">
+    <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-2xl font-bold text-blue-700">Kathmandu Valley Cooperative</h1>
+      <nav>
+        <ul class="flex space-x-6 text-gray-700 font-medium">
+          <li><a href="#dashboard" class="hover:text-blue-600" onclick="showSection('dashboard')">Dashboard</a></li>
+          <li><a href="#ai-detect" class="hover:text-blue-600" onclick="showSection('ai-detect')">Detect Anomaly</a></li>
+          <li><a href="#shap-explain" class="hover:text-blue-600" onclick="showSection('shap-explain')">SHAP Explain</a></li>
+          <li><a href="#settings" class="hover:text-blue-600" onclick="showSection('settings')">Settings</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="flex-1 container mx-auto px-4 py-8 space-y-16">
+    <!-- Main Dashboard Section -->
+    <section id="dashboard-section" class="section">
+      <div class="mb-8">
+        <h2 class="text-xl font-semibold text-gray-800">Anomaly Detection Dashboard</h2>
+        <p class="text-gray-500">Real-time monitoring of cooperative transactions</p>
+      </div>
+      <div id="data-status" class="mb-4 text-center text-gray-400">No data uploaded</div>
+      <div class="flex flex-wrap gap-4 mb-6 justify-center">
+        <button onclick="openModal('uploadModal')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Upload CSV</button>
+        <button onclick="refreshDashboard()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Refresh</button>
+        <button onclick="exportData()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Export</button>
+      </div>
+      <!-- Key Metrics -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Total Transactions</div>
+          <div class="text-2xl font-bold" id="total-transactions">0</div>
+          <div class="text-green-500 text-xs" id="total-transactions-change">+0%</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Total Amount</div>
+          <div class="text-2xl font-bold" id="total-amount">NPR 0</div>
+          <div class="text-green-500 text-xs" id="total-amount-change">+0%</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Anomalies Detected</div>
+          <div class="text-2xl font-bold" id="anomalies-detected">0</div>
+          <div class="text-gray-400 text-xs">-</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Avg Transaction</div>
+          <div class="text-2xl font-bold" id="avg-transaction">NPR 0</div>
+          <div class="text-blue-500 text-xs">Stable</div>
+        </div>
+      </div>
+      <!-- Charts -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <div class="bg-white rounded shadow p-4">
+          <div class="font-semibold mb-2">Transaction Volume Trend</div>
+          <canvas id="volumeTrendChart" height="120"></canvas>
+        </div>
+        <div class="bg-white rounded shadow p-4">
+          <div class="font-semibold mb-2">Transaction Types</div>
+          <canvas id="transactionTypesChart" height="120"></canvas>
+        </div>
+      </div>
+      <!-- Tables -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <div class="bg-white rounded shadow p-4 overflow-x-auto">
+          <div class="font-semibold mb-2">Recent Anomalies</div>
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="px-2 py-1">Member ID</th>
+                <th class="px-2 py-1">Type</th>
+                <th class="px-2 py-1">Amount</th>
+                <th class="px-2 py-1">Risk</th>
+                <th class="px-2 py-1">Action</th>
+              </tr>
+            </thead>
+            <tbody id="recent-anomalies">
+              <tr><td colspan="5" class="text-center text-gray-400">No anomalies detected</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="bg-white rounded shadow p-4 overflow-x-auto">
+          <div class="font-semibold mb-2">Recent Transactions</div>
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="px-2 py-1">Member ID</th>
+                <th class="px-2 py-1">Type</th>
+                <th class="px-2 py-1">Amount</th>
+                <th class="px-2 py-1">Branch</th>
+                <th class="px-2 py-1">Time</th>
+              </tr>
+            </thead>
+            <tbody id="recent-transactions">
+              <tr><td colspan="5" class="text-center text-gray-400">No transactions</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="bg-white rounded shadow p-4 overflow-x-auto">
+        <div class="font-semibold mb-2">Cooperative Performance</div>
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="px-2 py-1">Cooperative</th>
+              <th class="px-2 py-1">Total Transactions</th>
+              <th class="px-2 py-1">Total Amount (NPR)</th>
+              <th class="px-2 py-1">Avg Amount (NPR)</th>
+              <th class="px-2 py-1">Performance</th>
+            </tr>
+          </thead>
+          <tbody id="cooperative-performance">
+            <tr><td colspan="5" class="text-center text-gray-400">No data</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- AI Anomaly Detection Section -->
+    <section id="ai-detect-section" class="section hidden">
+      <div class="mb-8 mt-16">
+        <h2 class="text-xl font-semibold text-gray-800">AI Anomaly Detection</h2>
+        <p class="text-gray-500">Advanced AI models for detecting transaction anomalies</p>
+      </div>
+      <div class="flex flex-wrap gap-4 mb-6 items-center">
+        <label class="font-medium">Model:</label>
+        <select id="model-select" class="border rounded px-2 py-1">
+          <option>Isolation Forest</option>
+          <option>MLP Model</option>
+        </select>
+        <button id="trainModelBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Train Model</button>
+        <button id="detectAnomaliesBtn" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Detect Anomalies</button>
+        <span id="ai-error-msg" class="text-red-600 text-sm ml-4 hidden"></span>
+      </div>
+      <!-- Model Status Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Model Type</div>
+          <div class="text-2xl font-bold" id="ai-model-type">Not Trained</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Features</div>
+          <div class="text-2xl font-bold" id="ai-model-features">0</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Accuracy</div>
+          <div class="text-2xl font-bold" id="ai-model-accuracy">-</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">F1 Score</div>
+          <div class="text-2xl font-bold" id="ai-model-f1">-</div>
+        </div>
+      </div>
+      <!-- Performance Metrics -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Precision</div>
+          <div class="text-xl font-bold" id="ai-model-precision">-</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Recall</div>
+          <div class="text-xl font-bold" id="ai-model-recall">-</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Detected Anomalies</div>
+          <div class="text-xl font-bold" id="ai-detected-anomalies-count">-</div>
+        </div>
+        <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Status</div>
+          <div class="text-xl font-bold" id="ai-model-status">Idle</div>
+        </div>
+      </div>
+      <!-- Add anomaly summary card and toggle -->
+      <div class="flex flex-wrap gap-4 mb-4 items-center">
+        <div class="bg-blue-50 rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Total Anomalies</div>
+          <div class="text-2xl font-bold" id="anomaly-summary-count">0</div>
+        </div>
+        <div class="bg-green-50 rounded shadow p-4 flex flex-col items-center">
+          <div class="text-sm text-gray-500">Anomaly %</div>
+          <div class="text-2xl font-bold" id="anomaly-summary-percent">0%</div>
+        </div>
+        <div class="flex items-center ml-4">
+          <input type="checkbox" id="toggle-anomaly-visibility" class="mr-2" checked>
+          <label for="toggle-anomaly-visibility" class="text-sm">Show Anomalies</label>
+        </div>
+        <button id="downloadAnomalyChart" class="ml-4 bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300">Download Chart</button>
+      </div>
+      <!-- Main anomaly chart -->
+      <div class="mt-8">
+        <div class="font-semibold mb-2">Transaction Amounts & Detected Anomalies</div>
+        <div id="anomalyChartLoading" class="hidden text-center text-blue-600 font-semibold">Rendering chart...</div>
+        <canvas id="anomalyChart" height="120" style="max-width:100%;"></canvas>
+      </div>
+      <!-- Bar chart for anomaly transaction types -->
+      <div class="mt-8">
+        <div class="font-semibold mb-2">Anomaly Transaction Types</div>
+        <canvas id="anomalyTypeBarChart" height="80" style="max-width:100%;"></canvas>
+      </div>
+      <!-- Detected Anomalies Table -->
+      <div class="bg-white rounded shadow p-4 overflow-x-auto mb-8">
+        <div class="font-semibold mb-2">Detected Anomalies</div>
+        <table class="min-w-full text-sm mb-4">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="px-2 py-1">Log ID</th>
+              <th class="px-2 py-1">Member ID</th>
+              <th class="px-2 py-1">Type</th>
+              <th class="px-2 py-1">Amount</th>
+              <th class="px-2 py-1">Risk</th>
+              <th class="px-2 py-1">Action</th>
+            </tr>
+          </thead>
+          <tbody id="detected-anomalies">
+            <tr><td colspan="6" class="text-center text-gray-400">No anomalies detected</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SHAP Anomaly Explanations Section -->
+    <section id="shap-explain-section" class="section hidden">
+      <div class="mb-8 mt-16">
+        <h2 class="text-xl font-semibold text-gray-800">SHAP Anomaly Explanations</h2>
+        <p class="text-gray-500">Understand why specific transactions were flagged as anomalies</p>
+      </div>
+      <div class="flex flex-wrap gap-4 mb-6 items-center">
+        <label class="font-medium">Model:</label>
+        <select id="shap-model-select" class="border rounded px-2 py-1">
+          <option>Isolation Forest</option>
+          <option>MLP Model</option>
+        </select>
+        <button id="generateShapBtn" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">Generate SHAP</button>
+        <span id="shap-error-msg" class="text-red-600 text-sm ml-4 hidden"></span>
+      </div>
+      <div id="shap-loading" class="hidden text-center text-purple-600 font-semibold">Generating SHAP explanations...</div>
+      <!-- Global SHAP Bar Chart -->
+      <div class="mt-8">
+        <div class="font-semibold mb-2">Global Feature Importance (SHAP)</div>
+        <canvas id="shapGlobalBarChart" height="80" style="max-width:100%;"></canvas>
+      </div>
+      <!-- Local SHAP Bar Chart -->
+      <div class="mt-8">
+        <div class="font-semibold mb-2">Local Explanation for Selected Transaction</div>
+        <canvas id="shapLocalBarChart" height="80" style="max-width:100%;"></canvas>
+      </div>
+    </section>
+
+    <!-- Settings Section -->
+    <section id="settings-section" class="section hidden">
+      <div class="mb-8 mt-16">
+        <h2 class="text-xl font-semibold text-gray-800">Settings</h2>
+        <p class="text-gray-500">Configure dashboard preferences and model parameters</p>
+      </div>
+      <div class="bg-white p-6 rounded-lg shadow">
+        <h3 class="text-lg font-semibold mb-4">Dashboard Configuration</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Refresh Interval (seconds)</label>
+            <input type="number" class="w-full border border-gray-300 rounded-lg px-3 py-2" value="30">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Risk Threshold</label>
+            <input type="range" class="w-full" min="0" max="1" step="0.1" value="0.7">
+          </div>
+          <div>
+            <label class="flex items-center">
+              <input type="checkbox" class="mr-2" checked>
+              <span>Enable real-time monitoring</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Data Upload Modal -->
+  <div id="uploadModal" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+      <h3 class="text-lg font-semibold mb-2">Upload Cooperative Data</h3>
+      <div class="mb-2 text-sm text-gray-600">Required CSV columns:</div>
+      <ul class="mb-4 text-xs text-gray-500 list-disc list-inside">
+        <li>log_id</li>
+        <li>timestamp</li>
+        <li>member_id</li>
+        <li>account_no</li>
+        <li>transaction_type</li>
+        <li>amount</li>
+        <li>balance</li>
+        <li>branch_name</li>
+        <li>device_ip</li>
+        <li>location</li>
+        <li>label (0 or 1 for anomaly)</li>
+      </ul>
+      <label class="block mb-2 font-medium">Choose a CSV file with cooperative transaction data</label>
+      <input type="file" id="csvFileInput" accept=".csv" class="mb-4 w-full border rounded px-2 py-1" />
+      <div class="flex justify-end gap-2">
+        <button onclick="closeModal('uploadModal')" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Cancel</button>
+        <button onclick="uploadCSV()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Upload File</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Anomaly Details Modal -->
+  <div id="anomalyDetailsModal" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+      <h3 class="text-lg font-semibold mb-4">Anomaly Details</h3>
+      <div id="anomaly-details-content" class="mb-4 text-gray-600">Placeholder for anomaly details.</div>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeModal('anomalyDetailsModal')" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Close</button>
+        <button class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Investigate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Indicators -->
+  <div id="loadingIndicator" class="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-lg p-6 flex flex-col items-center">
+      <div class="loader mb-2"></div>
+      <div class="text-blue-700 font-semibold">Loading...</div>
+      <div class="text-xs text-gray-400">Processing AI model...</div>
+    </div>
+  </div>
+
+  <script>
+    // Section navigation
+    function showSection(section) {
+      document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+      if (section === 'dashboard') document.getElementById('dashboard-section').classList.remove('hidden');
+      if (section === 'ai-detect') document.getElementById('ai-detect-section').classList.remove('hidden');
+      if (section === 'shap-explain') document.getElementById('shap-explain-section').classList.remove('hidden');
+      if (section === 'settings') document.getElementById('settings-section').classList.remove('hidden');
+    }
+    // Modal logic
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+    // Loading indicator logic
+    function showLoading(msg) {
+      if (msg) document.querySelector('#loadingIndicator .text-blue-700').textContent = msg;
+      document.getElementById('loadingIndicator').classList.remove('hidden');
+    }
+    function hideLoading() {
+      document.getElementById('loadingIndicator').classList.add('hidden');
+      document.querySelector('#loadingIndicator .text-blue-700').textContent = 'Loading...';
+    }
+    // Store uploaded filename
+    let uploadedFilename = null;
+    let csvData = [];
+    let aiModelType = 'Isolation Forest';
+    let aiModelMetrics = {};
+    let detectedAnomalies = [];
+    // Chart.js chart references
+    let volumeTrendChart = null;
+    let transactionTypesChart = null;
+    let anomalyChart = null;
+    let anomalyTypeBarChart = null;
+    let lastAnomalyChartData = null;
+    let lastAnomalies = null;
+    let lastTimestamps = null;
+    // SHAP section references
+    let shapGlobalBarChart = null;
+    let shapLocalBarChart = null;
+    let lastShapFeatureNames = null;
+    let lastShapGlobal = null;
+    let lastShapModelType = 'Isolation Forest';
+    // CSV upload logic (connects to Flask backend)
+    async function uploadCSV() {
+      const fileInput = document.getElementById('csvFileInput');
+      if (!fileInput.files.length) {
+        alert('Please select a file.');
+        return;
+      }
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+      showLoading('Uploading CSV...');
+      try {
+        const response = await fetch('http://localhost:5000/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await response.json();
+        if (response.ok) {
+          uploadedFilename = result.filename;
+          document.getElementById('data-status').textContent = 'Data uploaded: ' + uploadedFilename;
+          await fetchCSVData();
+        } else {
+          alert(result.error || 'Upload failed');
+        }
+      } catch (err) {
+        alert('Error uploading file. Is the backend running?');
+      }
+      hideLoading();
+      closeModal('uploadModal');
+    }
+    // Fetch CSV data from backend and display in table and charts
+    async function fetchCSVData() {
+      if (!uploadedFilename) return;
+      showLoading('Fetching CSV data...');
+      try {
+        const response = await fetch(`http://localhost:5000/data?filename=${encodeURIComponent(uploadedFilename)}`);
+        const result = await response.json();
+        if (response.ok && result.data) {
+          csvData = result.data;
+          renderRecentTransactions(csvData);
+          updateChartsWithCSV(csvData);
+          updateKeyMetrics(csvData);
+        } else {
+          csvData = [];
+          renderRecentTransactions([]);
+          updateChartsWithCSV([]);
+          updateKeyMetrics([]);
+        }
+      } catch (err) {
+        csvData = [];
+        renderRecentTransactions([]);
+        updateChartsWithCSV([]);
+        updateKeyMetrics([]);
+      }
+      hideLoading();
+    }
+    // Render Recent Transactions table
+    function renderRecentTransactions(data) {
+      const tbody = document.getElementById('recent-transactions');
+      tbody.innerHTML = '';
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400">No transactions</td></tr>';
+        return;
+      }
+      data.slice(0, 10).forEach(row => {
+        tbody.innerHTML += `<tr>
+          <td class="px-2 py-1">${row.member_id || '-'}</td>
+          <td class="px-2 py-1">${row.transaction_type || '-'}</td>
+          <td class="px-2 py-1">${row.amount || '-'}</td>
+          <td class="px-2 py-1">${row.branch_name || '-'}</td>
+          <td class="px-2 py-1">${row.timestamp || '-'}</td>
+        </tr>`;
+      });
+    }
+    // Update charts with CSV data
+    function updateChartsWithCSV(data) {
+      // Transaction Volume Trend (by date)
+      const dateCounts = {};
+      data.forEach(row => {
+        const date = row.timestamp ? row.timestamp.split(' ')[0] : 'Unknown';
+        dateCounts[date] = (dateCounts[date] || 0) + 1;
+      });
+      const sortedDates = Object.keys(dateCounts).sort();
+      const volumeData = sortedDates.map(date => dateCounts[date]);
+      volumeTrendChart.data.labels = sortedDates;
+      volumeTrendChart.data.datasets[0].data = volumeData;
+      volumeTrendChart.update();
+      // Transaction Types (pie chart)
+      const typeCounts = {};
+      data.forEach(row => {
+        const type = row.transaction_type || 'Unknown';
+        typeCounts[type] = (typeCounts[type] || 0) + 1;
+      });
+      const typeLabels = Object.keys(typeCounts);
+      const typeData = typeLabels.map(type => typeCounts[type]);
+      transactionTypesChart.data.labels = typeLabels;
+      transactionTypesChart.data.datasets[0].data = typeData;
+      transactionTypesChart.update();
+    }
+    // Update key metrics
+    function updateKeyMetrics(data) {
+      let totalTransactions = data.length;
+      let totalAmount = 0;
+      let anomalies = 0;
+      data.forEach(row => {
+        totalAmount += Number(row.amount) || 0;
+        if (row.label && (row.label === 1 || row.label === '1')) anomalies++;
+      });
+      let avgTransaction = totalTransactions ? (totalAmount / totalTransactions) : 0;
+      document.getElementById('total-transactions').textContent = totalTransactions;
+      document.getElementById('total-amount').textContent = 'NPR ' + totalAmount.toLocaleString();
+      document.getElementById('anomalies-detected').textContent = anomalies;
+      document.getElementById('avg-transaction').textContent = 'NPR ' + avgTransaction.toLocaleString(undefined, {maximumFractionDigits:2});
+    }
+    // AI Model Section Logic
+    document.getElementById('model-select').addEventListener('change', function(e) {
+      aiModelType = e.target.value;
+    });
+    document.getElementById('trainModelBtn').onclick = async function() {
+      await trainModelWithUI();
+    };
+    document.getElementById('detectAnomaliesBtn').onclick = async function() {
+      await detectAnomaliesWithUI();
+    };
+    async function trainModelWithUI() {
+      hideAIError();
+      if (!uploadedFilename) {
+        showAIError('Please upload a CSV file first.');
+        return;
+      }
+      showLoading('Training ' + aiModelType + '...');
+      try {
+        const response = await fetch('http://localhost:5000/train', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: uploadedFilename, model_type: aiModelType })
+        });
+        let result;
+        try {
+          result = await response.json();
+        } catch (jsonErr) {
+          showAIError('Invalid response from backend.');
+          hideLoading();
+          return;
+        }
+        if (response.ok) {
+          updateAIModelStatus(result);
+          showAIStatus('Model trained successfully!');
+        } else {
+          showAIError(result.error || 'Training failed');
+        }
+      } catch (err) {
+        showAIError('Error training model. Is the backend running? ' + (err.message || err));
+      }
+      hideLoading();
+    }
+    async function detectAnomaliesWithUI() {
+      hideAIError();
+      if (!uploadedFilename) {
+        showAIError('Please upload a CSV file first.');
+        return;
+      }
+      showLoading('Detecting anomalies...');
+      document.getElementById('anomalyChartLoading').classList.remove('hidden');
+      try {
+        const response = await fetch('http://localhost:5000/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: uploadedFilename, model_type: aiModelType })
+        });
+        let result;
+        try {
+          result = await response.json();
+        } catch (jsonErr) {
+          showAIError('Invalid response from backend.');
+          hideLoading();
+          document.getElementById('anomalyChartLoading').classList.add('hidden');
+          return;
+        }
+        if (response.ok && result.anomalies) {
+          renderDetectedAnomalies(result.anomalies);
+          document.getElementById('ai-detected-anomalies-count').textContent = result.anomalies.length;
+          showAIStatus('Anomaly detection completed!');
+          // Plot chart if chart_data is present
+          if (result.chart_data) {
+            // Try to get timestamps from csvData if available
+            let timestamps = csvData && csvData.length === result.chart_data.amounts.length ? csvData.map(r => r.timestamp || '') : null;
+            lastAnomalyChartData = result.chart_data;
+            lastAnomalies = result.anomalies;
+            lastTimestamps = timestamps;
+            plotAnomalyChart(result.chart_data, result.anomalies, timestamps);
+            plotAnomalyTypeBar(result.anomalies);
+            updateAnomalySummary(result.anomalies, result.chart_data.amounts.length);
+          }
+        } else {
+          renderDetectedAnomalies([]);
+          document.getElementById('ai-detected-anomalies-count').textContent = '0';
+          showAIError(result.error || 'Detection failed');
+          plotAnomalyChart(null); // Clear chart
+          plotAnomalyTypeBar([]);
+          updateAnomalySummary([], 0);
+        }
+      } catch (err) {
+        renderDetectedAnomalies([]);
+        document.getElementById('ai-detected-anomalies-count').textContent = '0';
+        showAIError('Error detecting anomalies. Is the backend running? ' + (err.message || err));
+        plotAnomalyChart(null); // Clear chart
+        plotAnomalyTypeBar([]);
+        updateAnomalySummary([], 0);
+      }
+      hideLoading();
+      document.getElementById('anomalyChartLoading').classList.add('hidden');
+    }
+    function updateAIModelStatus(result) {
+      document.getElementById('ai-model-type').textContent = result.model_type || '-';
+      document.getElementById('ai-model-features').textContent = (result.features && result.features.length) || '0';
+      document.getElementById('ai-model-accuracy').textContent = result.metrics && result.metrics.accuracy !== undefined ? result.metrics.accuracy.toFixed(2) : '-';
+      document.getElementById('ai-model-f1').textContent = result.metrics && result.metrics.f1 !== undefined ? result.metrics.f1.toFixed(2) : '-';
+      document.getElementById('ai-model-precision').textContent = result.metrics && result.metrics.precision !== undefined ? result.metrics.precision.toFixed(2) : '-';
+      document.getElementById('ai-model-recall').textContent = result.metrics && result.metrics.recall !== undefined ? result.metrics.recall.toFixed(2) : '-';
+      document.getElementById('ai-model-status').textContent = 'Trained';
+    }
+    const origRenderDetectedAnomalies = renderDetectedAnomalies;
+    renderDetectedAnomalies = function(data) {
+      // Attach original index to each anomaly for SHAP lookup
+      if (Array.isArray(data)) {
+        data.forEach((row, idx) => { row._originalIndex = idx; });
+      }
+      origRenderDetectedAnomalies(data);
+      addAnomalyRowClickHandlersWithIndex(data);
+    };
+    function showAIError(msg) {
+      const el = document.getElementById('ai-error-msg');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      document.getElementById('ai-model-status').textContent = 'Error';
+    }
+    function hideAIError() {
+      const el = document.getElementById('ai-error-msg');
+      el.textContent = '';
+      el.classList.add('hidden');
+      document.getElementById('ai-model-status').textContent = 'Idle';
+    }
+    function showAIStatus(msg) {
+      document.getElementById('ai-model-status').textContent = msg;
+    }
+    function plotAnomalyChart(chartData, anomalies=[], timestamps=null) {
+      const ctx = document.getElementById('anomalyChart').getContext('2d');
+      if (anomalyChart) {
+        anomalyChart.destroy();
+      }
+      if (!chartData || !chartData.amounts || chartData.amounts.length === 0) {
+        anomalyChart = new Chart(ctx, {
+          type: 'line',
+          data: { labels: [], datasets: [] },
+          options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+        return;
+      }
+      // Use timestamps if available, else fallback to index
+      const labels = timestamps && timestamps.length === chartData.amounts.length ? timestamps : chartData.amounts.map((_, i) => i);
+      // Build a map from index to anomaly details for fast lookup
+      const anomalyMap = {};
+      anomalies.forEach(a => {
+        const idx = chartData.anomaly_indices[anomalies.indexOf(a)];
+        if (typeof idx !== 'undefined') {
+          anomalyMap[idx] = a;
+        }
+      });
+      // Toggle anomaly visibility
+      const showAnomalies = document.getElementById('toggle-anomaly-visibility').checked;
+      anomalyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Transaction Amount',
+              data: chartData.amounts,
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37,99,235,0.1)',
+              fill: false,
+              tension: 0.2,
+              pointRadius: 0,
+              borderWidth: 2,
+              order: 1
+            },
+            showAnomalies ? {
+              label: 'Anomaly',
+              data: labels.map((i, idx) => chartData.anomaly_indices.includes(idx) ? chartData.anomaly_amounts[chartData.anomaly_indices.indexOf(idx)] : null),
+              borderColor: 'rgba(0,0,0,0)',
+              backgroundColor: 'red',
+              pointRadius: 7,
+              type: 'scatter',
+              showLine: false,
+              order: 2
+            } : null
+          ].filter(Boolean)
+        },
+        options: {
+          responsive: true,
+          devicePixelRatio: 2,
+          plugins: {
+            legend: { display: true },
+            title: {
+              display: true,
+              text: 'Isolation Forest - Detected Anomalies in Transactions',
+              font: { size: 18 }
+            },
+            tooltip: {
+              enabled: true,
+              callbacks: {
+                label: function(context) {
+                  if (context.datasetIndex === 0) {
+                    return 'Amount: Rs ' + context.parsed.y;
+                  }
+                  if (context.datasetIndex === 1 && context.parsed.y !== null) {
+                    const idx = context.dataIndex;
+                    const anomaly = anomalyMap[idx];
+                    if (anomaly) {
+                      let details = [
+                        'Anomaly!',
+                        'Amount: Rs ' + anomaly.amount,
+                        'Member ID: ' + anomaly.member_id,
+                        'Type: ' + anomaly.transaction_type,
+                        'Log ID: ' + anomaly.log_id
+                      ];
+                      return details;
+                    } else {
+                      return 'Anomaly: Rs ' + context.parsed.y;
+                    }
+                  }
+                  return null;
+                }
+              }
+            },
+            zoom: {
+              pan: { enabled: true, mode: 'xy' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+            }
+          },
+          scales: {
+            x: { title: { display: true, text: timestamps ? 'Timestamp' : 'Time Index' }, ticks: { autoSkip: true, maxTicksLimit: 20 } },
+            y: { title: { display: true, text: 'Transaction Amount (Rs)' } }
+          }
+        }
+      });
+    }
+    function plotAnomalyTypeBar(anomalies) {
+      const ctx = document.getElementById('anomalyTypeBarChart').getContext('2d');
+      if (anomalyTypeBarChart) {
+        anomalyTypeBarChart.destroy();
+      }
+      if (!anomalies || anomalies.length === 0) {
+        anomalyTypeBarChart = new Chart(ctx, {
+          type: 'bar',
+          data: { labels: [], datasets: [] },
+          options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+        return;
+      }
+      // Count transaction types among anomalies
+      const typeCounts = {};
+      anomalies.forEach(a => {
+        const type = a.transaction_type || 'Unknown';
+        typeCounts[type] = (typeCounts[type] || 0) + 1;
+      });
+      const labels = Object.keys(typeCounts);
+      const data = labels.map(l => typeCounts[l]);
+      anomalyTypeBarChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Anomaly Count',
+            data: data,
+            backgroundColor: '#f43f5e',
+            borderColor: '#b91c1c',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          devicePixelRatio: 2,
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: 'Anomaly Transaction Types', font: { size: 16 } }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Transaction Type' } },
+            y: { title: { display: true, text: 'Count' }, beginAtZero: true }
+          }
+        }
+      });
+    }
+    function updateAnomalySummary(anomalies, total) {
+      document.getElementById('anomaly-summary-count').textContent = anomalies.length;
+      document.getElementById('anomaly-summary-percent').textContent = total ? ((anomalies.length / total * 100).toFixed(2) + '%') : '0%';
+    }
+    // Toggle anomaly visibility
+    const toggleAnomalyVisibility = document.getElementById('toggle-anomaly-visibility');
+    toggleAnomalyVisibility.addEventListener('change', function() {
+      if (lastAnomalyChartData && lastAnomalies) {
+        plotAnomalyChart(lastAnomalyChartData, lastAnomalies, lastTimestamps);
+      }
+    });
+    // Download chart as PNG
+    const downloadBtn = document.getElementById('downloadAnomalyChart');
+    downloadBtn.addEventListener('click', function() {
+      if (anomalyChart) {
+        const url = anomalyChart.toBase64Image('image/png', 1);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'anomaly_chart.png';
+        a.click();
+      }
+    });
+    // Placeholder for refresh and export
+    function refreshDashboard() {
+      fetchCSVData();
+    }
+    function exportData() {
+      alert('Export functionality is a placeholder.');
+    }
+    // Chart.js initialization
+    window.onload = function() {
+      // Initialize charts with empty data
+      const ctx1 = document.getElementById('volumeTrendChart').getContext('2d');
+      volumeTrendChart = new Chart(ctx1, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'Transactions',
+            data: [],
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.1)',
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: {responsive: true, plugins: {legend: {display: false}}}
+      });
+      const ctx2 = document.getElementById('transactionTypesChart').getContext('2d');
+      transactionTypesChart = new Chart(ctx2, {
+        type: 'pie',
+        data: {
+          labels: [],
+          datasets: [{
+            data: [],
+            backgroundColor: ['#22d3ee', '#f59e42', '#f43f5e', '#a3e635', '#f472b6']
+          }]
+        },
+        options: {responsive: true}
+      });
+    };
+    // SHAP UI logic
+    function showShapError(msg) {
+      const el = document.getElementById('shap-error-msg');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+    function hideShapError() {
+      const el = document.getElementById('shap-error-msg');
+      el.textContent = '';
+      el.classList.add('hidden');
+    }
+    function showShapLoading(msg) {
+      document.getElementById('shap-loading').textContent = msg || 'Generating SHAP explanations...';
+      document.getElementById('shap-loading').classList.remove('hidden');
+    }
+    function hideShapLoading() {
+      document.getElementById('shap-loading').classList.add('hidden');
+      document.getElementById('shap-loading').textContent = 'Generating SHAP explanations...';
+    }
+    document.getElementById('shap-model-select').addEventListener('change', function(e) {
+      lastShapModelType = e.target.value;
+    });
+    document.getElementById('generateShapBtn').onclick = async function() {
+      await generateShapGlobal();
+    };
+    async function generateShapGlobal() {
+      hideShapError();
+      if (!uploadedFilename) {
+        showShapError('Please upload a CSV file first.');
+        return;
+      }
+      showShapLoading('Generating global SHAP explanations...');
+      try {
+        const response = await fetch('http://localhost:5000/shap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: uploadedFilename, model_type: lastShapModelType })
+        });
+        const result = await response.json();
+        if (response.ok && result.global_importance && result.feature_names) {
+          lastShapFeatureNames = result.feature_names;
+          lastShapGlobal = result.global_importance;
+          plotShapGlobalBar(result.feature_names, result.global_importance);
+          hideShapLoading();
+        } else {
+          showShapError(result.error || 'Failed to generate SHAP explanations.');
+          plotShapGlobalBar([], []);
+          hideShapLoading();
+        }
+      } catch (err) {
+        showShapError('Error generating SHAP explanations. ' + (err.message || err));
+        plotShapGlobalBar([], []);
+        hideShapLoading();
+      }
+    }
+    function plotShapGlobalBar(featureNames, shapValues) {
+      const ctx = document.getElementById('shapGlobalBarChart').getContext('2d');
+      if (shapGlobalBarChart) {
+        shapGlobalBarChart.destroy();
+      }
+      if (!featureNames || !shapValues || featureNames.length === 0) {
+        shapGlobalBarChart = new Chart(ctx, {
+          type: 'bar',
+          data: { labels: [], datasets: [] },
+          options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+        return;
+      }
+      shapGlobalBarChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: featureNames,
+          datasets: [{
+            label: 'Mean |SHAP value|',
+            data: shapValues,
+            backgroundColor: '#a78bfa',
+            borderColor: '#6d28d9',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          devicePixelRatio: 2,
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: 'Global Feature Importance (SHAP)', font: { size: 16 } }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Feature' } },
+            y: { title: { display: true, text: 'Mean |SHAP value|' }, beginAtZero: true }
+          }
+        }
+      });
+    }
+    // Local SHAP: when user clicks a row in anomalies table, fetch and plot local SHAP
+    function plotShapLocalBar(featureNames, shapValues) {
+      const ctx = document.getElementById('shapLocalBarChart').getContext('2d');
+      if (shapLocalBarChart) {
+        shapLocalBarChart.destroy();
+      }
+      if (!featureNames || !shapValues || featureNames.length === 0) {
+        shapLocalBarChart = new Chart(ctx, {
+          type: 'bar',
+          data: { labels: [], datasets: [] },
+          options: { responsive: true, plugins: { legend: { display: false },
+            title: { display: true, text: 'No local SHAP explanation available', font: { size: 16 } } } }
+        });
+        return;
+      }
+      shapLocalBarChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: featureNames,
+          datasets: [{
+            label: 'Local SHAP value',
+            data: shapValues,
+            backgroundColor: '#f472b6',
+            borderColor: '#be185d',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          devicePixelRatio: 2,
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: 'Local SHAP Explanation', font: { size: 16 } }
+          },
+          scales: {
+            x: { title: { display: true, text: 'SHAP value' } },
+            y: { title: { display: true, text: 'Feature' } }
+          }
+        }
+      });
+    }
+    // Add click handler to anomalies table rows for local SHAP
+    function addAnomalyRowClickHandlersWithIndex(anomalies) {
+      const tbody = document.getElementById('detected-anomalies');
+      if (!tbody) return;
+      Array.from(tbody.querySelectorAll('tr')).forEach((row, idx) => {
+        // Only add handler if this is a data row (not the 'no anomalies' row)
+        if (anomalies && anomalies[idx] && !row.classList.contains('shap-row')) {
+          row.classList.add('shap-row');
+          row.setAttribute('data-anomaly-idx', anomalies[idx]._originalIndex !== undefined ? anomalies[idx]._originalIndex : idx);
+          row.addEventListener('click', async function() {
+            // Remove highlight from all rows
+            Array.from(tbody.querySelectorAll('tr')).forEach(r => r.classList.remove('bg-purple-100'));
+            row.classList.add('bg-purple-100');
+            if (!lastShapFeatureNames) {
+              showShapError('Please generate global SHAP explanations first.');
+              return;
+            }
+            showShapLoading('Generating local SHAP explanation...');
+            try {
+              const anomalyIdx = parseInt(row.getAttribute('data-anomaly-idx'));
+              const response = await fetch('http://localhost:5000/shap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: uploadedFilename, model_type: lastShapModelType, index: anomalyIdx })
+              });
+              const result = await response.json();
+              if (response.ok && result.local_shap && result.feature_names) {
+                plotShapLocalBar(result.feature_names, result.local_shap);
+                hideShapLoading();
+              } else {
+                showShapError(result.error || 'Failed to generate local SHAP explanation.');
+                plotShapLocalBar([], []);
+                hideShapLoading();
+              }
+            } catch (err) {
+              showShapError('Error generating local SHAP explanation. ' + (err.message || err));
+              plotShapLocalBar([], []);
+              hideShapLoading();
+            }
+          });
+        }
+      });
+    }
+  </script>
+</body>
+</html>
