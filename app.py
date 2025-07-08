@@ -12,6 +12,13 @@ from collections import Counter
 from sklearn.utils import resample
 import shap
 import numpy as np
+import shap_utils  # Add at the top with other imports
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+import tempfile
+import base64
+import io
 
 app = Flask(__name__)
 CORS(app)
@@ -212,6 +219,72 @@ def shap_explain():
     filename = data.get('filename')
     model_type = data.get('model_type', 'Isolation Forest')
     index = data.get('index', None)
+    indices = data.get('indices', None)
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+    df = pd.read_csv(filepath)
+    features = df.select_dtypes(include='number').copy()
+    if 'label' in features:
+        features = features.drop('label', axis=1)
+    features = features.fillna(features.mean())
+    global model_iforest, model_mlp, mlp_scaler
+    try:
+        result = {}
+        if model_type == 'Isolation Forest' and model_iforest is not None:
+            import shap_utils
+            global_importance, shap_values = shap_utils.compute_tree_shap_global(model_iforest, features)
+            result['feature_names'] = list(features.columns)
+            result['global_importance'] = global_importance.tolist()
+            # Single local explanation
+            if index is not None and 0 <= index < len(features):
+                result['local_shap'] = shap_utils.compute_tree_shap_local(model_iforest, features, index).tolist()
+            # Batch local explanations
+            if indices is not None and isinstance(indices, list):
+                result['batch_local_shap'] = [shap_utils.compute_tree_shap_local(model_iforest, features, idx).tolist() if 0 <= idx < len(features) else None for idx in indices]
+        elif model_type == 'MLP Model' and model_mlp is not None:
+            import shap_utils
+            X_scaled = mlp_scaler.transform(features.values)
+            global_importance, shap_values, sample_idx = shap_utils.compute_mlp_shap_global(model_mlp, X_scaled)
+            result['feature_names'] = list(features.columns)
+            result['global_importance'] = global_importance.tolist()
+            result['explained_indices'] = sample_idx.tolist()
+            # Single local explanation
+            if index is not None and 0 <= index < X_scaled.shape[0]:
+                local_shap = shap_utils.compute_mlp_shap_local(model_mlp, X_scaled, index)
+                result['local_shap'] = local_shap.tolist()
+            # Batch local explanations
+            if indices is not None and isinstance(indices, list):
+                result['batch_local_shap'] = [shap_utils.compute_mlp_shap_local(model_mlp, X_scaled, idx).tolist() if 0 <= idx < X_scaled.shape[0] else None for idx in indices]
+        else:
+            return jsonify({'error': 'Model not trained or unknown model type'}), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'SHAP explanation failed: {str(e)}'}), 500
+
+@app.route('/shap_plot', methods=['POST'])
+def shap_plot():
+    """
+    Expects JSON: {
+        'filename': str,
+        'model_type': str,
+        'plot_type': 'summary' | 'force' | 'dependence',
+        'index': int (for force plot),
+        'feature': str or int (for dependence plot),
+        'summary_plot_type': 'bar' | 'dot' (optional, for summary)
+    }
+    Returns: { 'image_base64': str }
+    """
+    import shap_utils
+    data = request.get_json()
+    filename = data.get('filename')
+    model_type = data.get('model_type', 'Isolation Forest')
+    plot_type = data.get('plot_type', 'summary')
+    index = data.get('index', None)
+    feature = data.get('feature', None)
+    summary_plot_type = data.get('summary_plot_type', 'bar')
     if not filename:
         return jsonify({'error': 'No filename provided'}), 400
     filepath = os.path.join(UPLOAD_FOLDER, filename)
@@ -225,40 +298,123 @@ def shap_explain():
     global model_iforest, model_mlp, mlp_scaler
     try:
         if model_type == 'Isolation Forest' and model_iforest is not None:
-            explainer = shap.TreeExplainer(model_iforest)
-            shap_values = explainer.shap_values(features)
-            global_importance = np.abs(shap_values).mean(axis=0)
-            result = {
-                'feature_names': list(features.columns),
-                'global_importance': global_importance.tolist(),
-            }
-            if index is not None and 0 <= index < len(features):
-                result['local_shap'] = shap_values[index].tolist()
+            global_importance, shap_values = shap_utils.compute_tree_shap_global(model_iforest, features)
+            feature_names = list(features.columns)
+            if plot_type == 'summary':
+                img_b64 = shap_utils.shap_summary_plot(shap_values, features, feature_names, plot_type=summary_plot_type)
+            elif plot_type == 'force':
+                explainer = shap.TreeExplainer(model_iforest)
+                if index is None:
+                    return jsonify({'error': 'Index required for force plot'}), 400
+                img_b64 = shap_utils.shap_force_plot(explainer, shap_values, features, feature_names, index)
+            elif plot_type == 'dependence':
+                if feature is None:
+                    return jsonify({'error': 'Feature required for dependence plot'}), 400
+                img_b64 = shap_utils.shap_dependence_plot(shap_values, features, feature_names, feature)
+            else:
+                return jsonify({'error': 'Unknown plot type'}), 400
         elif model_type == 'MLP Model' and model_mlp is not None:
-            # Use the same scaler as during training
             X_scaled = mlp_scaler.transform(features.values)
-            # Use a small background sample for KernelExplainer
-            background = shap.utils.sample(X_scaled, min(100, X_scaled.shape[0]), random_state=42)
-            explainer = shap.KernelExplainer(model_mlp.predict_proba, background)
-            # For speed, only explain a sample of points
-            sample_idx = np.arange(X_scaled.shape[0])
-            if X_scaled.shape[0] > 200:
-                sample_idx = np.random.choice(X_scaled.shape[0], 200, replace=False)
-            shap_values = explainer.shap_values(X_scaled[sample_idx], nsamples=100)
-            global_importance = np.abs(shap_values[1]).mean(axis=0)  # class 1 (anomaly)
-            result = {
-                'feature_names': list(features.columns),
-                'global_importance': global_importance.tolist(),
-                'explained_indices': sample_idx.tolist()
-            }
-            if index is not None and 0 <= index < X_scaled.shape[0]:
-                local_shap = explainer.shap_values(X_scaled[index:index+1], nsamples=100)
-                result['local_shap'] = local_shap[1][0].tolist()
+            global_importance, shap_values, sample_idx = shap_utils.compute_mlp_shap_global(model_mlp, X_scaled)
+            feature_names = list(features.columns)
+            if plot_type == 'summary':
+                img_b64 = shap_utils.shap_summary_plot(shap_values[1], X_scaled[sample_idx], feature_names, plot_type=summary_plot_type)
+            elif plot_type == 'force':
+                background = shap.utils.sample(X_scaled, min(100, X_scaled.shape[0]), random_state=42)
+                explainer = shap.KernelExplainer(model_mlp.predict_proba, background)
+                if index is None:
+                    return jsonify({'error': 'Index required for force plot'}), 400
+                img_b64 = shap_utils.shap_force_plot(explainer, shap_values[1], X_scaled[sample_idx], feature_names, index)
+            elif plot_type == 'dependence':
+                if feature is None:
+                    return jsonify({'error': 'Feature required for dependence plot'}), 400
+                img_b64 = shap_utils.shap_dependence_plot(shap_values[1], X_scaled[sample_idx], feature_names, feature)
+            else:
+                return jsonify({'error': 'Unknown plot type'}), 400
         else:
             return jsonify({'error': 'Model not trained or unknown model type'}), 400
-        return jsonify(result)
+        return jsonify({'image_base64': img_b64})
     except Exception as e:
-        return jsonify({'error': f'SHAP explanation failed: {str(e)}'}), 500
+        return jsonify({'error': f'SHAP plot generation failed: {str(e)}'}), 500
+
+@app.route('/shap_report', methods=['POST'])
+def shap_report():
+    """
+    Expects JSON: {
+        'filename': str,
+        'model_type': str,
+        'indices': list of int (optional, for local explanations)
+    }
+    Returns: PDF file (application/pdf)
+    """
+    import shap_utils
+    data = request.get_json()
+    filename = data.get('filename')
+    model_type = data.get('model_type', 'Isolation Forest')
+    indices = data.get('indices', [])
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+    df = pd.read_csv(filepath)
+    features = df.select_dtypes(include='number').copy()
+    if 'label' in features:
+        features = features.drop('label', axis=1)
+    features = features.fillna(features.mean())
+    global model_iforest, model_mlp, mlp_scaler
+    try:
+        # Prepare SHAP values and plots
+        if model_type == 'Isolation Forest' and model_iforest is not None:
+            global_importance, shap_values = shap_utils.compute_tree_shap_global(model_iforest, features)
+            feature_names = list(features.columns)
+            summary_b64 = shap_utils.shap_summary_plot(shap_values, features, feature_names, plot_type='bar')
+            explainer = shap.TreeExplainer(model_iforest)
+            local_b64s = []
+            for idx in indices:
+                local_b64s.append(shap_utils.shap_force_plot(explainer, shap_values, features, feature_names, idx))
+        elif model_type == 'MLP Model' and model_mlp is not None:
+            X_scaled = mlp_scaler.transform(features.values)
+            global_importance, shap_values, sample_idx = shap_utils.compute_mlp_shap_global(model_mlp, X_scaled)
+            feature_names = list(features.columns)
+            summary_b64 = shap_utils.shap_summary_plot(shap_values[1], X_scaled[sample_idx], feature_names, plot_type='bar')
+            background = shap.utils.sample(X_scaled, min(100, X_scaled.shape[0]), random_state=42)
+            explainer = shap.KernelExplainer(model_mlp.predict_proba, background)
+            local_b64s = []
+            for idx in indices:
+                local_b64s.append(shap_utils.shap_force_plot(explainer, shap_values[1], X_scaled[sample_idx], feature_names, idx))
+        else:
+            return jsonify({'error': 'Model not trained or unknown model type'}), 400
+        # Generate PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmpfile:
+            c = canvas.Canvas(tmpfile.name, pagesize=letter)
+            width, height = letter
+            c.setFont('Helvetica-Bold', 16)
+            c.drawString(40, height-40, 'SHAP Explainability Report')
+            c.setFont('Helvetica', 12)
+            c.drawString(40, height-70, f'Model: {model_type}')
+            c.drawString(40, height-90, f'File: {filename}')
+            c.drawString(40, height-110, 'Global SHAP Summary:')
+            # Add summary plot
+            summary_img = ImageReader(io.BytesIO(base64.b64decode(summary_b64)))
+            c.drawImage(summary_img, 40, height-400, width=500, height=250, preserveAspectRatio=True, mask='auto')
+            y = height-420
+            if local_b64s:
+                c.drawString(40, y-20, 'Local SHAP Explanations:')
+                for i, local_b64 in enumerate(local_b64s):
+                    y -= 270
+                    if y < 100:
+                        c.showPage()
+                        y = height-100
+                    c.drawString(40, y, f'Instance {indices[i]}:')
+                    local_img = ImageReader(io.BytesIO(base64.b64decode(local_b64)))
+                    c.drawImage(local_img, 40, y-220, width=500, height=200, preserveAspectRatio=True, mask='auto')
+            c.save()
+            tmpfile.seek(0)
+            pdf_bytes = tmpfile.read()
+        return (pdf_bytes, 200, {'Content-Type': 'application/pdf', 'Content-Disposition': f'attachment; filename=shap_report_{model_type.replace(" ", "_")}.pdf'})
+    except Exception as e:
+        return jsonify({'error': f'SHAP report generation failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=True)
